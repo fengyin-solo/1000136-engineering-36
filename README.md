@@ -15,8 +15,12 @@
 │   ├── src/stores/           会话与筛选状态
 │   └── vite.config.ts        dev server 配置（open: false）
 ├── backend/                  FastAPI（Python） 后端
+│   ├── data/                 启动依赖的源数据文件（如 document_seed.json）
 │   ├── app/routers/          每个业务模块一组接口
 │   ├── app/services/         业务规则与状态流转
+│   ├── app/bootstrap.py      启动数据准备：校验、哈希一致性、缓存与崩溃恢复
+│   ├── app/datasets.py       体系文档字段/状态统一口径声明
+│   ├── app/prepare_data.py   数据准备 CLI（预检 / 强制重建 / 状态查看）
 │   └── app/store.py          内存数据仓库与示例数据
 ├── .gitignore
 └── docker-compose.yml
@@ -32,7 +36,35 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./run.sh
 ```
 
-健康检查：`curl http://127.0.0.1:8000/api/health`
+健康检查（存活）：`curl http://127.0.0.1:8000/api/health`
+就绪检查（数据准备）：`curl http://127.0.0.1:8000/api/ready`
+
+### 体系文档启动数据准备
+
+体系文档（`document`）不再使用内置种子常量，启动时执行一条数据准备流水线，
+保证「文档编号、文档名称、文档类型」口径在源文件、缓存、接口、前端之间一致：
+
+```text
+data/document_seed.json  ──校验──▶  .cache/document_cache.json  ──装载──▶ 内存表
+       （源文件，入库）              （构建缓存，可重建，不入库）
+```
+
+- **一致性检查**：缓存记录源文件 SHA-256、schema 版本、构建时间与行指纹；
+  源文件改动、版本升级、缓存过期、缓存损坏/被篡改任一情况都会重建，绝不静默使用旧内容。
+- **失败可诊断**：源文件缺失、JSON 非法、必填口径字段缺失、编号重复、状态越界时，
+  错误带「阶段 + 原因 + 修复建议」；`/api/ready` 返回 503 与诊断信息，业务接口同步拒绝服务。
+- **重试可恢复**：缓存写入采用「临时文件 + fsync + 原子 rename」，异常中断后
+  下次启动自动清理残文件并重建；多进程启动用文件锁串行化，只重建一次。
+- 手动操作：
+
+```bash
+python -m app.prepare_data          # 启动前预检/准备（缓存有效则复用）
+python -m app.prepare_data --status # 只读查看源与缓存一致性
+python -m app.prepare_data --force  # 强制重建
+```
+
+可用环境变量调整：`APP_DATA_DIR`、`APP_CACHE_DIR`、`DOCUMENT_CACHE_TTL_SECONDS`
+（TTL 秒数，默认 86400，设为 0 表示不过期）。
 
 ### 前端
 

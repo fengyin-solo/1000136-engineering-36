@@ -5,9 +5,17 @@ services:
       - "8000:8000"
     environment:
       - APP_ENV=local
+    healthcheck:
+      # /api/health 只表存活；体系文档数据准备就绪用 /api/ready 判断
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/ready').status == 200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
   frontend:
     build: ./frontend
     ports:
       - "5173:5173"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
