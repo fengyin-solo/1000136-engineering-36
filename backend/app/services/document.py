@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.bootstrap import DOCUMENT_KEY_FIELDS
 from app.store import store
 
 MODULE = "document"
-REQUIRED_FIELDS = ["文档编号", "文档名称", "文档类型"]
+# 必填口径与数据准备的关键字段口径同源：文档编号、文档名称、文档类型
+REQUIRED_FIELDS = list(DOCUMENT_KEY_FIELDS)
 STATUS_ORDER = ["草案", "审批中", "正式发布", "已作废"]
 ACTION_RULES = {"提交审批": "审批中", "正式发布": "正式发布", "作废文档": "已作废"}
 NEGATIVE_ACTIONS = ["作废文档"]

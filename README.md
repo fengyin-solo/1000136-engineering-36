@@ -17,7 +17,9 @@
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/          每个业务模块一组接口
 │   ├── app/services/         业务规则与状态流转
-│   └── app/store.py          内存数据仓库与示例数据
+│   ├── app/bootstrap.py      体系文档数据准备与一致性检查
+│   ├── app/store.py          内存数据仓库与示例数据
+│   └── tests/                数据准备与一致性测试
 ├── .gitignore
 └── docker-compose.yml
 ```
@@ -32,7 +34,42 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./run.sh
 ```
 
-健康检查：`curl http://127.0.0.1:8000/api/health`
+健康检查：`curl http://127.0.0.1:8000/api/health`（返回里带 `document_data`，
+可以看到体系文档数据准备的结果与指纹）。
+
+### 体系文档数据准备（启动一致性检查）
+
+体系文档模块的启动数据不直接读种子，而是走 `app/bootstrap.py` 的数据准备流程：
+种子数据物化成 `backend/data/document.json` 与 `document.manifest.json`
+（清单含种子指纹、文件校验和、关键字段摘要），校验通过才会加载。三种启动场景：
+
+- **首次启动**：产物不存在，自动全量重建；
+- **重复启动**：指纹一致，直接复用缓存，不重写任何文件；
+- **异常中断**：残留的临时文件或半截文件会被清理并重建，重试安全
+  （写盘统一走临时文件 + 原子替换）。
+
+缺少文件、缓存过期、文件被改动都不会悄悄沿用旧内容：校验失败先重建，
+重建也失败则启动中止，并打印带阶段信息的错误（`stage=prepare/verify/load`），
+按错误里的路径与原因排查即可。
+
+手工执行：
+
+```bash
+cd backend
+.venv/bin/python -m app.bootstrap            # 数据准备（有缓存则校验复用）
+.venv/bin/python -m app.bootstrap --check    # 只做一致性检查，不重建
+.venv/bin/python -m app.bootstrap --force    # 强制重建
+```
+
+一致性口径：**文档编号、文档名称、文档类型** 三个关键字段在种子数据、
+数据产物、接口返回之间完全一致，`backend/tests/test_document_bootstrap.py`
+覆盖了首次启动、重复启动、缓存过期、缺少文件、异常中断与失败诊断。
+
+### 测试
+
+```bash
+make test   # 等价于 cd backend && .venv/bin/python -m unittest discover -s tests -t . -v
+```
 
 ### 前端
 
@@ -74,3 +111,5 @@ npm run dev
   `backend/app/routers/<模块>.py`，业务规则在 `backend/app/services/<模块>.py`。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+- 体系文档的关键字段口径（文档编号、文档名称、文档类型）以 `app/bootstrap.py`
+  的 `DOCUMENT_KEY_FIELDS` 为准，登记必填、数据准备校验都从它派生。

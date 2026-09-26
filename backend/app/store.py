@@ -1,11 +1,16 @@
 """内存数据仓库：给每个业务模块准备一份可筛选、可流转的示例数据。
 
 真实项目里这里会换成数据库访问层；当前实现只依赖标准库，保证克隆下来就能起。
+
+体系文档模块例外：它的启动数据来自 app.bootstrap 的数据准备产物——
+启动时会做一致性检查，缺文件、缓存过期或写坏都会重建，重建失败直接报错，
+不会悄悄沿用旧内容。
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app import bootstrap
 from app.seed import SEED_ROWS
 
 
@@ -14,6 +19,8 @@ class Store:
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
+        # 体系文档：以数据准备产物为准（首次建缓存、重复启动校验、异常中断自愈）
+        self._tables[bootstrap.MODULE] = bootstrap.load_prepared_rows()
 
     def module_names(self) -> list[str]:
         return sorted(self._tables)
